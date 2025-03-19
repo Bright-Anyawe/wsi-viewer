@@ -7,7 +7,6 @@ import "./globals.css"
 export const metadata: Metadata = {
   title: "WSI Viewer",
   description: "Whole Slide Image Viewer with detection results",
-  generator: "v0.dev",
 }
 
 export default function RootLayout({
@@ -18,7 +17,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Add OpenSeadragon script */}
         <script src="https://cdn.jsdelivr.net/npm/openseadragon@3.1.0/build/openseadragon/openseadragon.min.js"></script>
       </head>
       <body>

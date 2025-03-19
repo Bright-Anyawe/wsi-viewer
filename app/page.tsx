@@ -1,12 +1,11 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
-// import { Loader2, ChevronDown, Minus, Plus, X } from "lucide-react"
+import { Loader2, ChevronDown, Minus, Plus, X } from "lucide-react"
 import DetailPanel from "@/components/detail-panel"
 import HubView from "@/components/hub-view"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { useMediaQuery } from "@/hooks/use-media-query"
-// Add framer-motion import at the top with other imports
 import { motion, AnimatePresence } from "framer-motion"
 
 // Parse the detection results from the JSON file
@@ -70,7 +69,10 @@ function useIsMobile() {
 
 export default function WSIViewer() {
   const viewerRef = useRef<HTMLDivElement>(null)
-  const viewerInstance = useRef<OpenSeadragon.Viewer | null>(null)
+  // Use a looser type for the viewer instance as we don't have proper types for OpenSeadragon
+  const viewerInstance = useRef<any>(null)
+  // Ref to store the dynamically imported OpenSeadragon module
+  const osModule = useRef<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [detectionResults, setDetectionResults] = useState<any[]>([])
   const [selectedFinding, setSelectedFinding] = useState<any>(null)
@@ -88,22 +90,22 @@ export default function WSIViewer() {
     setDetectionResults(results)
   }, [])
 
-  
   useEffect(() => {
     let isCancelled = false;
     let redrawInterval: ReturnType<typeof setInterval> | undefined;
-  
+
     // Assign viewerRef.current to a local variable
     const viewerElement = viewerRef.current;
     if (!viewerElement) return;
-  
+
     // Dynamically import OpenSeadragon on the client
     import("openseadragon").then((module) => {
       if (isCancelled) return;
-      const OpenSeadragon = module.default;
-  
+      const OS = module.default;
+      osModule.current = OS; // store for later use
+
       // Initialize the viewer using the local variable
-      viewerInstance.current = OpenSeadragon({
+      viewerInstance.current = OS({
         id: viewerElement.id,
         prefixUrl: "https://openseadragon.github.io/openseadragon/images/",
         tileSources: {
@@ -123,28 +125,28 @@ export default function WSIViewer() {
         visibilityRatio: 1,
         debugMode: false,
       });
-  
+
       // Add event handlers
       viewerInstance.current.addHandler("open", () => {
         setIsLoading(false);
       });
-  
+
       viewerInstance.current.addHandler("open-failed", () => {
         console.error("Failed to open the image");
         setIsLoading(false);
       });
-  
+
       viewerInstance.current.addHandler("animation", () => {
         if (viewerInstance.current && !isLoading) {
           const viewport = viewerInstance.current.viewport;
           const bounds = viewport.getBounds();
-  
+
           // Safely get the image size
           const tiledImage = viewerInstance.current.world.getItemAt(0);
           if (!tiledImage) return;
-  
+
           const imageSize = tiledImage.getContentSize();
-  
+
           setZoomLevel(viewport.getZoom());
           setViewportRect({
             x: bounds.x / imageSize.x,
@@ -154,37 +156,37 @@ export default function WSIViewer() {
           });
         }
       });
-  
+
       // Draw bounding boxes function
       const drawBoundingBoxes = () => {
         if (!viewerInstance.current || isLoading || detectionResults.length === 0) return;
         if (viewerInstance.current.world.getItemCount() === 0) return;
-  
+
         viewerInstance.current.clearOverlays();
-  
+
         detectionResults.forEach((result) => {
           const element = document.createElement("div");
           element.className = `absolute border-2 ${
             selectedFinding?.id === result.id ? "border-primary" : "border-yellow-500"
           } bg-yellow-500/20`;
-  
+
           element.onclick = (e) => {
             e.stopPropagation();
             setSelectedFinding(result);
           };
-  
+
           viewerInstance.current.addOverlay({
             element,
-            location: new OpenSeadragon.Rect(result.x, result.y, result.width, result.height),
-            placement: OpenSeadragon.Placement.CENTER,
+            location: new OS.Rect(result.x, result.y, result.width, result.height),
+            placement: OS.Placement.CENTER,
           });
         });
       };
-  
+
       // Set an interval to redraw bounding boxes periodically
       redrawInterval = setInterval(drawBoundingBoxes, 100);
     });
-  
+
     // Cleanup: clear interval and destroy viewer instance
     return () => {
       isCancelled = true;
@@ -192,53 +194,57 @@ export default function WSIViewer() {
       viewerInstance.current?.destroy();
     };
   }, [selectedFinding, detectionResults, isLoading]);
-  
 
   // Add touch gesture support for the main viewer
   useEffect(() => {
-    if (!viewerInstance.current || !viewerRef.current) return
+    if (!viewerInstance.current || !viewerRef.current) return;
 
     // Enable gesture support for touch devices
-    viewerInstance.current.gestureSettingsMouse.clickToZoom = true
-    viewerInstance.current.gestureSettingsMouse.dblClickToZoom = true
+    viewerInstance.current.gestureSettingsMouse.clickToZoom = true;
+    viewerInstance.current.gestureSettingsMouse.dblClickToZoom = true;
 
     // Configure touch settings
-    viewerInstance.current.gestureSettingsTouch.pinchToZoom = true
-    viewerInstance.current.gestureSettingsTouch.flickEnabled = true
-    viewerInstance.current.gestureSettingsTouch.flickMinSpeed = 20
-    viewerInstance.current.gestureSettingsTouch.flickMomentum = 0.4
+    viewerInstance.current.gestureSettingsTouch.pinchToZoom = true;
+    viewerInstance.current.gestureSettingsTouch.flickEnabled = true;
+    viewerInstance.current.gestureSettingsTouch.flickMinSpeed = 20;
+    viewerInstance.current.gestureSettingsTouch.flickMomentum = 0.4;
 
     // Adjust pan speed for touch
-    viewerInstance.current.panHorizontal = true
-    viewerInstance.current.panVertical = true
-  }, [viewerInstance.current])
+    viewerInstance.current.panHorizontal = true;
+    viewerInstance.current.panVertical = true;
+  }, [viewerInstance.current]);
 
   // Function to zoom to a specific finding
   const zoomToFinding = (finding: any) => {
-    if (!viewerInstance.current) return
+    if (!viewerInstance.current || !osModule.current) return;
 
-    setSelectedFinding(finding)
+    setSelectedFinding(finding);
 
     viewerInstance.current.viewport.panTo(
-      new OpenSeadragon.Point(finding.x + finding.width / 2, finding.y + finding.height / 2),
-    )
+      new osModule.current.Point(
+        finding.x + finding.width / 2,
+        finding.y + finding.height / 2
+      )
+    );
 
-    viewerInstance.current.viewport.zoomTo(viewerInstance.current.viewport.getZoom() * 1.5)
-  }
+    viewerInstance.current.viewport.zoomTo(
+      viewerInstance.current.viewport.getZoom() * 1.5
+    );
+  };
 
   // Handle zoom buttons
   const handleZoomIn = () => {
-    viewerInstance.current?.viewport.zoomBy(1.2)
-  }
+    viewerInstance.current?.viewport.zoomBy(1.2);
+  };
 
   const handleZoomOut = () => {
-    viewerInstance.current?.viewport.zoomBy(0.8)
-  }
+    viewerInstance.current?.viewport.zoomBy(0.8);
+  };
 
   const handleZoomSlider = (value: number[]) => {
-    if (!viewerInstance.current) return
-    viewerInstance.current.viewport.zoomTo(value[0])
-  }
+    if (!viewerInstance.current) return;
+    viewerInstance.current.viewport.zoomTo(value[0]);
+  };
 
   // Replace the entire return statement with this responsive layout
   return (
@@ -281,7 +287,11 @@ export default function WSIViewer() {
               }}
               transition={{ duration: 0.3 }}
             >
-              {isMobile ? <ChevronDown className="h-4 w-4" /> : <ChevronDown className="h-4 w-4 rotate-90" />}
+              {isMobile ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4 rotate-90" />
+              )}
             </motion.div>
           </Button>
         </div>
@@ -316,7 +326,12 @@ export default function WSIViewer() {
         {/* Top controls */}
         <div className="flex flex-col sm:flex-row justify-between items-center p-2 sm:p-4 border-b gap-2 bg-muted/30">
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Button size="sm" onClick={handleZoomOut} variant="outline" className="hover:bg-muted/80 transition-colors">
+            <Button
+              size="sm"
+              onClick={handleZoomOut}
+              variant="outline"
+              className="hover:bg-muted/80 transition-colors"
+            >
               <X className="h-3 w-3 sm:h-4 sm:w-4" />
               <span className="sr-only">Zoom Out</span>
             </Button>
@@ -330,7 +345,12 @@ export default function WSIViewer() {
                 className="cursor-pointer"
               />
             </div>
-            <Button size="sm" onClick={handleZoomIn} variant="outline" className="hover:bg-muted/80 transition-colors">
+            <Button
+              size="sm"
+              onClick={handleZoomIn}
+              variant="outline"
+              className="hover:bg-muted/80 transition-colors"
+            >
               <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
               <span className="sr-only">Zoom In</span>
             </Button>
@@ -372,7 +392,11 @@ export default function WSIViewer() {
                     patientId="7"
                     sampleType="blood"
                     onSelectRegion={(x, y) => {
-                      viewerInstance.current?.viewport.panTo(new OpenSeadragon.Point(x, y))
+                      if (osModule.current) {
+                        viewerInstance.current?.viewport.panTo(
+                          new osModule.current.Point(x, y)
+                        );
+                      }
                     }}
                   />
                 </motion.div>
@@ -382,10 +406,6 @@ export default function WSIViewer() {
         </div>
 
         {/* Main WSI Viewer */}
-        <div className="flex-1 relative">
-          <div id="wsi-viewer" ref={viewerRef} className="w-full h-full" />
-
-                    {/* Main WSI Viewer */}
         <div className="flex-1 relative">
           <div id="wsi-viewer" ref={viewerRef} className="w-full h-full" />
 
@@ -399,7 +419,11 @@ export default function WSIViewer() {
               >
                 <motion.div
                   animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
+                  transition={{
+                    duration: 1,
+                    repeat: Number.POSITIVE_INFINITY,
+                    ease: "linear",
+                  }}
                 >
                   <Loader2 className="h-8 w-8 text-primary" />
                 </motion.div>
@@ -422,7 +446,8 @@ export default function WSIViewer() {
                       {selectedFinding.label} #{selectedFinding.id}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Confidence: {Math.round(selectedFinding.confidence * 100)}%
+                      Confidence:{" "}
+                      {Math.round(selectedFinding.confidence * 100)}%
                     </p>
                   </div>
                   <Button
@@ -439,38 +464,7 @@ export default function WSIViewer() {
             )}
           </AnimatePresence>
         </div>
-
-          {selectedFinding && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className="absolute bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-xs bg-background/90 backdrop-blur-sm p-3 rounded-lg shadow-lg border"
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-medium">
-                    {selectedFinding.label} #{selectedFinding.id}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Confidence: {Math.round(selectedFinding.confidence * 100)}%
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setSelectedFinding(null)}
-                  className="h-7 w-7 rounded-full hover:bg-muted/80 transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                  <span className="sr-only">Close</span>
-                </Button>
-              </div>
-            </motion.div>
-          )}
-        </div>
       </div>
     </div>
   )
 }
-
