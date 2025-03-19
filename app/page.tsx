@@ -1,8 +1,6 @@
 "use client"
-
 import { useEffect, useRef, useState } from "react"
-import OpenSeadragon from "openseadragon"
-import { Loader2, ChevronDown, Minus, Plus } from "lucide-react"
+// import { Loader2, ChevronDown, Minus, Plus, X } from "lucide-react"
 import DetailPanel from "@/components/detail-panel"
 import HubView from "@/components/hub-view"
 import { Button } from "@/components/ui/button"
@@ -90,101 +88,111 @@ export default function WSIViewer() {
     setDetectionResults(results)
   }, [])
 
+  
   useEffect(() => {
-    if (!viewerRef.current) return
-
-    // Initialize OpenSeadragon viewer
-    viewerInstance.current = OpenSeadragon({
-      id: viewerRef.current.id,
-      prefixUrl: "https://openseadragon.github.io/openseadragon/images/",
-      tileSources: {
-        type: "image",
-        url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/7_20241209_024613-VRGH4Pmar0WL8CnQukfeGg5hPxb1GW.png", // Blood cell microscopy image
-        buildPyramid: false,
-      },
-      showNavigationControl: false,
-      showRotationControl: false,
-      animationTime: 0.5,
-      blendTime: 0.1,
-      constrainDuringPan: true,
-      maxZoomPixelRatio: 2,
-      minZoomLevel: 0.5,
-      maxZoomLevel: 10,
-      zoomPerClick: 1.4,
-      visibilityRatio: 1,
-      debugMode: false,
-    })
-
-    // Add event handlers
-    viewerInstance.current.addHandler("open", () => {
-      setIsLoading(false)
-    })
-
-    viewerInstance.current.addHandler("open-failed", () => {
-      console.error("Failed to open the image")
-      setIsLoading(false)
-    })
-
-    viewerInstance.current.addHandler("animation", () => {
-      if (viewerInstance.current && !isLoading) {
-        const viewport = viewerInstance.current.viewport
-        const bounds = viewport.getBounds()
-
-        // Get the image size safely
-        const tiledImage = viewerInstance.current.world.getItemAt(0)
-        if (!tiledImage) return
-
-        const imageSize = tiledImage.getContentSize()
-
-        setZoomLevel(viewport.getZoom())
-        setViewportRect({
-          x: bounds.x / imageSize.x,
-          y: bounds.y / imageSize.y,
-          width: bounds.width / imageSize.x,
-          height: bounds.height / imageSize.y,
-        })
-      }
-    })
-
-    // Draw bounding boxes
-    const drawBoundingBoxes = () => {
-      if (!viewerInstance.current || isLoading || detectionResults.length === 0) return
-
-      // Check if we have an item in the world
-      if (viewerInstance.current.world.getItemCount() === 0) return
-
-      // Remove existing overlays
-      viewerInstance.current.clearOverlays()
-
-      // Add bounding boxes as overlays
-      detectionResults.forEach((result) => {
-        const element = document.createElement("div")
-        element.className = `absolute border-2 ${
-          selectedFinding?.id === result.id ? "border-primary" : "border-yellow-500"
-        } bg-yellow-500/20`
-
-        // Add click handler to select finding
-        element.onclick = (e) => {
-          e.stopPropagation()
-          setSelectedFinding(result)
+    let isCancelled = false;
+    let redrawInterval: ReturnType<typeof setInterval> | undefined;
+  
+    // Assign viewerRef.current to a local variable
+    const viewerElement = viewerRef.current;
+    if (!viewerElement) return;
+  
+    // Dynamically import OpenSeadragon on the client
+    import("openseadragon").then((module) => {
+      if (isCancelled) return;
+      const OpenSeadragon = module.default;
+  
+      // Initialize the viewer using the local variable
+      viewerInstance.current = OpenSeadragon({
+        id: viewerElement.id,
+        prefixUrl: "https://openseadragon.github.io/openseadragon/images/",
+        tileSources: {
+          type: "image",
+          url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/7_20241209_024613-VRGH4Pmar0WL8CnQukfeGg5hPxb1GW.png",
+          buildPyramid: false,
+        },
+        showNavigationControl: false,
+        showRotationControl: false,
+        animationTime: 0.5,
+        blendTime: 0.1,
+        constrainDuringPan: true,
+        maxZoomPixelRatio: 2,
+        minZoomLevel: 0.5,
+        maxZoomLevel: 10,
+        zoomPerClick: 1.4,
+        visibilityRatio: 1,
+        debugMode: false,
+      });
+  
+      // Add event handlers
+      viewerInstance.current.addHandler("open", () => {
+        setIsLoading(false);
+      });
+  
+      viewerInstance.current.addHandler("open-failed", () => {
+        console.error("Failed to open the image");
+        setIsLoading(false);
+      });
+  
+      viewerInstance.current.addHandler("animation", () => {
+        if (viewerInstance.current && !isLoading) {
+          const viewport = viewerInstance.current.viewport;
+          const bounds = viewport.getBounds();
+  
+          // Safely get the image size
+          const tiledImage = viewerInstance.current.world.getItemAt(0);
+          if (!tiledImage) return;
+  
+          const imageSize = tiledImage.getContentSize();
+  
+          setZoomLevel(viewport.getZoom());
+          setViewportRect({
+            x: bounds.x / imageSize.x,
+            y: bounds.y / imageSize.y,
+            width: bounds.width / imageSize.x,
+            height: bounds.height / imageSize.y,
+          });
         }
-
-        viewerInstance.current?.addOverlay({
-          element,
-          location: new OpenSeadragon.Rect(result.x, result.y, result.width, result.height),
-          placement: OpenSeadragon.Placement.CENTER,
-        })
-      })
-    }
-
-    // Draw boxes initially and when selection changes
-    const redrawInterval = setInterval(drawBoundingBoxes, 100)
-
+      });
+  
+      // Draw bounding boxes function
+      const drawBoundingBoxes = () => {
+        if (!viewerInstance.current || isLoading || detectionResults.length === 0) return;
+        if (viewerInstance.current.world.getItemCount() === 0) return;
+  
+        viewerInstance.current.clearOverlays();
+  
+        detectionResults.forEach((result) => {
+          const element = document.createElement("div");
+          element.className = `absolute border-2 ${
+            selectedFinding?.id === result.id ? "border-primary" : "border-yellow-500"
+          } bg-yellow-500/20`;
+  
+          element.onclick = (e) => {
+            e.stopPropagation();
+            setSelectedFinding(result);
+          };
+  
+          viewerInstance.current.addOverlay({
+            element,
+            location: new OpenSeadragon.Rect(result.x, result.y, result.width, result.height),
+            placement: OpenSeadragon.Placement.CENTER,
+          });
+        });
+      };
+  
+      // Set an interval to redraw bounding boxes periodically
+      redrawInterval = setInterval(drawBoundingBoxes, 100);
+    });
+  
+    // Cleanup: clear interval and destroy viewer instance
     return () => {
-      clearInterval(redrawInterval)
-      viewerInstance.current?.destroy()
-    }
-  }, [selectedFinding, detectionResults, isLoading])
+      isCancelled = true;
+      if (redrawInterval) clearInterval(redrawInterval);
+      viewerInstance.current?.destroy();
+    };
+  }, [selectedFinding, detectionResults, isLoading]);
+  
 
   // Add touch gesture support for the main viewer
   useEffect(() => {
@@ -309,7 +317,7 @@ export default function WSIViewer() {
         <div className="flex flex-col sm:flex-row justify-between items-center p-2 sm:p-4 border-b gap-2 bg-muted/30">
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button size="sm" onClick={handleZoomOut} variant="outline" className="hover:bg-muted/80 transition-colors">
-              <Minus className="h-3 w-3 sm:h-4 sm:w-4" />
+              <X className="h-3 w-3 sm:h-4 sm:w-4" />
               <span className="sr-only">Zoom Out</span>
             </Button>
             <div className="w-24 sm:w-40">
@@ -377,6 +385,10 @@ export default function WSIViewer() {
         <div className="flex-1 relative">
           <div id="wsi-viewer" ref={viewerRef} className="w-full h-full" />
 
+                    {/* Main WSI Viewer */}
+        <div className="flex-1 relative">
+          <div id="wsi-viewer" ref={viewerRef} className="w-full h-full" />
+
           <AnimatePresence>
             {isLoading && (
               <motion.div
@@ -395,6 +407,38 @@ export default function WSIViewer() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          <AnimatePresence>
+            {selectedFinding && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                className="absolute bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-xs bg-background/90 backdrop-blur-sm p-3 rounded-lg shadow-lg border"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-medium">
+                      {selectedFinding.label} #{selectedFinding.id}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Confidence: {Math.round(selectedFinding.confidence * 100)}%
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setSelectedFinding(null)}
+                    className="h-7 w-7 rounded-full hover:bg-muted/80 transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Close</span>
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
           {selectedFinding && (
             <motion.div
@@ -418,7 +462,7 @@ export default function WSIViewer() {
                   onClick={() => setSelectedFinding(null)}
                   className="h-7 w-7 rounded-full hover:bg-muted/80 transition-colors"
                 >
-                  <Minus className="h-4 w-4" />
+                  <X className="h-4 w-4" />
                   <span className="sr-only">Close</span>
                 </Button>
               </div>
